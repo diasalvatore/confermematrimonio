@@ -47,10 +47,30 @@ function getSpreadsheetId() {
   return id;
 }
 
+async function ensureSheet(
+  sheets: ReturnType<typeof getSheetsClient>,
+  spreadsheetId: string
+) {
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = spreadsheet.data.sheets?.some(
+    (s) => s.properties?.title === SHEET_NAME
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: SHEET_NAME } } }],
+      },
+    });
+  }
+}
+
 async function ensureHeaderRow(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string
 ) {
+  await ensureSheet(sheets, spreadsheetId);
+
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `${SHEET_NAME}!A1:G1`,
@@ -177,6 +197,8 @@ export async function createGuest(
 export async function getAllGuests(): Promise<Guest[]> {
   const sheets = getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
+
+  await ensureHeaderRow(sheets, spreadsheetId);
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
