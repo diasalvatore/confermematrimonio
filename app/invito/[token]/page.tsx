@@ -109,18 +109,21 @@ function AlreadyResponded({
             {presente ? "Confermata ✓" : "Non presente"}
           </span>
         </div>
-        {presente && guest.partecipanti > 0 && (
-          <div className="flex justify-between">
-            <span className="text-stone-400">Partecipanti</span>
-            <span className="text-stone-700">{guest.partecipanti}</span>
-          </div>
-        )}
-        {guest.intolleranze && (
-          <div className="flex justify-between">
-            <span className="text-stone-400">Intolleranze</span>
-            <span className="text-stone-700 text-right max-w-[60%]">
-              {guest.intolleranze}
-            </span>
+        {presente && guest.persone.length > 0 && (
+          <div className="pt-1">
+            <p className="text-stone-400 mb-1.5">
+              {guest.persone.length === 1 ? "1 partecipante" : `${guest.persone.length} partecipanti`}
+            </p>
+            <div className="space-y-1.5">
+              {guest.persone.map((p, i) => (
+                <div key={i} className="bg-white rounded-lg px-3 py-2 border border-stone-100 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-stone-700">{p.nome}</span>
+                  <span className="text-xs text-stone-400 shrink-0">
+                    {p.tipo}{p.menu ? ` · ${p.menu}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {guest.dataRisposta && (

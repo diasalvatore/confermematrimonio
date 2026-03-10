@@ -2,14 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+interface PersonaRow {
+  nome: string;
+  tipo: string;
+  menu: string;
+}
+
 interface Guest {
   token: string;
   invitato: string;
   confermato: "si" | "no" | "";
-  partecipanti: number;
-  intolleranze: string;
   note: string;
   dataRisposta: string;
+  persone: PersonaRow[];
 }
 
 interface EventSettings {
@@ -252,9 +257,13 @@ function Dashboard({
     pending: guests.filter((g) => g.confermato === "").length,
     totalParticipants: guests
       .filter((g) => g.confermato === "si")
-      .reduce((sum, g) => sum + (g.partecipanti || 0), 0),
-    withIntolerances: guests.filter(
-      (g) => g.confermato === "si" && g.intolleranze.trim()
+      .reduce((sum, g) => sum + g.persone.length, 0),
+    withSpecialMenu: guests.filter(
+      (g) =>
+        g.confermato === "si" &&
+        g.persone.some(
+          (p) => p.menu === "celiachia" || p.menu.startsWith("altro:")
+        )
     ).length,
   };
 
@@ -396,13 +405,13 @@ function Dashboard({
                 Partecipanti totali confermati
               </p>
             </div>
-            {stats.withIntolerances > 0 && (
+            {stats.withSpecialMenu > 0 && (
               <div className="bg-amber-50 border border-amber-100 rounded-2xl px-5 py-4 flex items-center gap-3">
                 <span className="text-amber-500 text-lg flex-shrink-0">⚠</span>
                 <p className="text-sm text-amber-700">
-                  <strong>{stats.withIntolerances}</strong>{" "}
-                  {stats.withIntolerances === 1 ? "gruppo ha" : "gruppi hanno"} segnalato
-                  intolleranze alimentari.
+                  <strong>{stats.withSpecialMenu}</strong>{" "}
+                  {stats.withSpecialMenu === 1 ? "gruppo ha" : "gruppi hanno"} esigenze
+                  alimentari particolari (celiachia o altro).
                 </p>
               </div>
             )}
@@ -584,16 +593,20 @@ function GuestRow({
               {guest.invitato}
             </button>
             {statusBadge}
-            {guest.confermato === "si" && guest.partecipanti > 0 && (
+            {guest.confermato === "si" && guest.persone.length > 0 && (
               <span className="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full whitespace-nowrap">
-                {guest.partecipanti} {guest.partecipanti === 1 ? "persona" : "persone"}
+                {guest.persone.length}{" "}
+                {guest.persone.length === 1 ? "persona" : "persone"}
               </span>
             )}
-            {guest.confermato === "si" && guest.intolleranze && (
-              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap">
-                ⚠ intolleranze
-              </span>
-            )}
+            {guest.confermato === "si" &&
+              guest.persone.some(
+                (p) => p.menu === "celiachia" || p.menu.startsWith("altro:")
+              ) && (
+                <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  ⚠ esigenze alimentari
+                </span>
+              )}
           </div>
           {/* Link always visible */}
           <a
@@ -637,11 +650,23 @@ function GuestRow({
               {link}
             </a>
           </p>
-          {guest.intolleranze && (
-            <p>
-              <span className="text-stone-400">Intolleranze:</span>{" "}
-              <span className="text-amber-700">{guest.intolleranze}</span>
-            </p>
+          {guest.persone.length > 0 && (
+            <div>
+              <span className="text-stone-400">Partecipanti:</span>
+              <div className="mt-1 space-y-0.5">
+                {guest.persone.map((p, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between bg-white rounded px-2 py-1 border border-stone-100"
+                  >
+                    <span className="text-stone-700 font-medium">{p.nome}</span>
+                    <span className="text-stone-400">
+                      {p.tipo}{p.menu ? ` · ${p.menu}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           {guest.note && (
             <p>

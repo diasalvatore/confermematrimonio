@@ -1,10 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGuest, saveRsvp } from "@/lib/sheets";
+import { getGuest, saveRsvp, type PersonaRow } from "@/lib/sheets";
+
+type TipoPersona = "adulto" | "bambino" | "neonato";
+type MenuPersona = "carne" | "pesce" | "celiachia" | "altro";
+
+interface PersonaInput {
+  nome: string;
+  tipo: TipoPersona;
+  menu: MenuPersona | null;
+  menuAltro?: string;
+}
+
+function toPersonaRow(p: PersonaInput): PersonaRow {
+  const tipoLabel =
+    p.tipo === "neonato" ? "bimbo 0-2 anni" : p.tipo;
+
+  if (p.tipo === "neonato") {
+    return { nome: p.nome, tipo: tipoLabel, menu: "seggiolone" };
+  }
+
+  const menuLabel =
+    p.menu === "carne"
+      ? "menu carne"
+      : p.menu === "pesce"
+      ? "menu pesce"
+      : p.menu === "celiachia"
+      ? "celiachia"
+      : p.menu === "altro"
+      ? `altro: ${p.menuAltro || ""}`.trim()
+      : "";
+
+  return { nome: p.nome, tipo: tipoLabel, menu: menuLabel };
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, confermato, partecipanti, intolleranze, note } = body;
+    const { token, confermato, persone, note } = body;
 
     if (!token || !confermato) {
       return NextResponse.json(
@@ -28,14 +60,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const numPartecipanti =
-      confermato === "si" ? Math.max(1, parseInt(partecipanti) || 1) : 0;
+    let personeRows: PersonaRow[] = [];
+
+    if (confermato === "si") {
+      if (!Array.isArray(persone) || persone.length === 0) {
+        return NextResponse.json(
+          { error: "Inserisci almeno una persona" },
+          { status: 400 }
+        );
+      }
+      personeRows = (persone as PersonaInput[]).map(toPersonaRow);
+    }
 
     const success = await saveRsvp(
       token,
       confermato,
-      numPartecipanti,
-      intolleranze || "",
+      personeRows,
       note || ""
     );
 

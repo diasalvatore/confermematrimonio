@@ -6,25 +6,32 @@ const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 const SHEET_NAME = "Ospiti";
 const SETTINGS_SHEET_NAME = "Impostazioni";
 
-// Column indices (0-based)
+// One row per person (confirmed guests), one row per invitation (pending/declined)
+// Columns A-H
 const COL = {
   TOKEN: 0,
   INVITATO: 1,
   CONFERMATO: 2,
-  PARTECIPANTI: 3,
-  INTOLLERANZE: 4,
-  NOTE: 5,
-  DATA_RISPOSTA: 6,
+  NOTE: 3,
+  DATA_RISPOSTA: 4,
+  NOME_PERSONA: 5,
+  TIPO_PERSONA: 6,
+  MENU_PERSONA: 7,
 };
+
+export interface PersonaRow {
+  nome: string;
+  tipo: string;
+  menu: string;
+}
 
 export interface Guest {
   token: string;
   invitato: string;
   confermato: "si" | "no" | "";
-  partecipanti: number;
-  intolleranze: string;
   note: string;
   dataRisposta: string;
+  persone: PersonaRow[];
 }
 
 export interface EventSettings {
@@ -79,6 +86,45 @@ async function ensureSheet(
   }
 }
 
+async function getSheetId(
+  sheets: ReturnType<typeof getSheetsClient>,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<number> {
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheet = spreadsheet.data.sheets?.find(
+    (s) => s.properties?.title === sheetName
+  );
+  if (sheet?.properties?.sheetId == null)
+    throw new Error(`Sheet "${sheetName}" not found`);
+  return sheet.properties.sheetId;
+}
+
+async function deleteRowsByIndices(
+  sheets: ReturnType<typeof getSheetsClient>,
+  spreadsheetId: string,
+  sheetId: number,
+  rowIndices: number[] // 1-indexed sheet rows
+) {
+  if (rowIndices.length === 0) return;
+  // Sort descending so earlier row indices aren't shifted by later deletions
+  const sorted = [...rowIndices].sort((a, b) => b - a);
+  const requests = sorted.map((rowIndex) => ({
+    deleteDimension: {
+      range: {
+        sheetId,
+        dimension: "ROWS",
+        startIndex: rowIndex - 1, // 0-indexed, inclusive
+        endIndex: rowIndex, // 0-indexed, exclusive
+      },
+    },
+  }));
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+}
+
 async function ensureHeaderRow(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string
@@ -87,13 +133,13 @@ async function ensureHeaderRow(
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A1:G1`,
+    range: `${SHEET_NAME}!A1:H1`,
   });
   const rows = res.data.values;
   if (!rows || rows.length === 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A1:G1`,
+      range: `${SHEET_NAME}!A1:H1`,
       valueInputOption: "RAW",
       requestBody: {
         values: [
@@ -101,15 +147,36 @@ async function ensureHeaderRow(
             "token",
             "invitato",
             "confermato",
-            "partecipanti",
-            "intolleranze",
             "note",
             "data_risposta",
+            "nome_persona",
+            "tipo_persona",
+            "menu_persona",
           ],
         ],
       },
     });
   }
+}
+
+function rowsToGuest(token: string, matchingRows: string[][]): Guest {
+  const first = matchingRows[0];
+  const persone: PersonaRow[] = matchingRows
+    .filter((r) => r[COL.NOME_PERSONA])
+    .map((r) => ({
+      nome: r[COL.NOME_PERSONA] || "",
+      tipo: r[COL.TIPO_PERSONA] || "",
+      menu: r[COL.MENU_PERSONA] || "",
+    }));
+
+  return {
+    token,
+    invitato: first[COL.INVITATO] || "",
+    confermato: (first[COL.CONFERMATO] || "") as Guest["confermato"],
+    note: first[COL.NOTE] || "",
+    dataRisposta: first[COL.DATA_RISPOSTA] || "",
+    persone,
+  };
 }
 
 export async function getGuest(token: string): Promise<Guest | null> {
@@ -118,29 +185,20 @@ export async function getGuest(token: string): Promise<Guest | null> {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:G`,
+    range: `${SHEET_NAME}!A2:H`,
   });
 
   const rows = res.data.values || [];
-  const row = rows.find((r) => r[COL.TOKEN] === token);
-  if (!row) return null;
+  const matchingRows = rows.filter((r) => r[COL.TOKEN] === token);
+  if (matchingRows.length === 0) return null;
 
-  return {
-    token: row[COL.TOKEN] || "",
-    invitato: row[COL.INVITATO] || "",
-    confermato: (row[COL.CONFERMATO] || "") as Guest["confermato"],
-    partecipanti: parseInt(row[COL.PARTECIPANTI] || "1") || 1,
-    intolleranze: row[COL.INTOLLERANZE] || "",
-    note: row[COL.NOTE] || "",
-    dataRisposta: row[COL.DATA_RISPOSTA] || "",
-  };
+  return rowsToGuest(token, matchingRows);
 }
 
 export async function saveRsvp(
   token: string,
   confermato: "si" | "no",
-  partecipanti: number,
-  intolleranze: string,
+  persone: PersonaRow[],
   note: string
 ): Promise<boolean> {
   const sheets = getSheetsClient();
@@ -148,31 +206,52 @@ export async function saveRsvp(
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:G`,
+    range: `${SHEET_NAME}!A2:H`,
   });
 
   const rows = res.data.values || [];
-  const rowIndex = rows.findIndex((r) => r[COL.TOKEN] === token);
-  if (rowIndex === -1) return false;
+  const matchingIndices: number[] = [];
+  let invitato = "";
 
-  // Row in sheet is 1-indexed, +2 because header is row 1, data starts at row 2
-  const sheetRow = rowIndex + 2;
+  rows.forEach((row, i) => {
+    if (row[COL.TOKEN] === token) {
+      matchingIndices.push(i + 2); // 1-indexed sheet row
+      if (!invitato) invitato = row[COL.INVITATO] || "";
+    }
+  });
 
-  await sheets.spreadsheets.values.update({
+  if (matchingIndices.length === 0) return false;
+
+  // Delete all existing rows for this token
+  const sheetId = await getSheetId(sheets, spreadsheetId, SHEET_NAME);
+  await deleteRowsByIndices(sheets, spreadsheetId, sheetId, matchingIndices);
+
+  const dataRisposta = new Date().toLocaleString("it-IT", {
+    timeZone: "Europe/Rome",
+  });
+
+  let newRows: string[][];
+  if (confermato === "si") {
+    newRows = persone.map((p) => [
+      token,
+      invitato,
+      confermato,
+      note,
+      dataRisposta,
+      p.nome,
+      p.tipo,
+      p.menu,
+    ]);
+  } else {
+    newRows = [[token, invitato, confermato, note, dataRisposta, "", "", ""]];
+  }
+
+  await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${SHEET_NAME}!C${sheetRow}:G${sheetRow}`,
+    range: `${SHEET_NAME}!A:H`,
     valueInputOption: "RAW",
-    requestBody: {
-      values: [
-        [
-          confermato,
-          confermato === "si" ? partecipanti : "",
-          intolleranze,
-          note,
-          new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" }),
-        ],
-      ],
-    },
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: newRows },
   });
 
   return true;
@@ -188,11 +267,11 @@ export async function createGuest(invitato: string): Promise<Guest> {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${SHEET_NAME}!A:G`,
+    range: `${SHEET_NAME}!A:H`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
-      values: [[token, invitato, "", "", "", "", ""]],
+      values: [[token, invitato, "", "", "", "", "", ""]],
     },
   });
 
@@ -200,10 +279,9 @@ export async function createGuest(invitato: string): Promise<Guest> {
     token,
     invitato,
     confermato: "",
-    partecipanti: 0,
-    intolleranze: "",
     note: "",
     dataRisposta: "",
+    persone: [],
   };
 }
 
@@ -215,21 +293,26 @@ export async function getAllGuests(): Promise<Guest[]> {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:G`,
+    range: `${SHEET_NAME}!A2:H`,
   });
 
   const rows = res.data.values || [];
-  return rows
-    .filter((r) => r[COL.TOKEN])
-    .map((r) => ({
-      token: r[COL.TOKEN] || "",
-      invitato: r[COL.INVITATO] || "",
-      confermato: (r[COL.CONFERMATO] || "") as Guest["confermato"],
-      partecipanti: parseInt(r[COL.PARTECIPANTI] || "0") || 0,
-      intolleranze: r[COL.INTOLLERANZE] || "",
-      note: r[COL.NOTE] || "",
-      dataRisposta: r[COL.DATA_RISPOSTA] || "",
-    }));
+
+  // Group rows by token, preserving insertion order
+  const order: string[] = [];
+  const map = new Map<string, string[][]>();
+
+  for (const row of rows) {
+    const token = row[COL.TOKEN];
+    if (!token) continue;
+    if (!map.has(token)) {
+      map.set(token, []);
+      order.push(token);
+    }
+    map.get(token)!.push(row);
+  }
+
+  return order.map((token) => rowsToGuest(token, map.get(token)!));
 }
 
 export async function deleteGuest(token: string): Promise<boolean> {
@@ -238,19 +321,18 @@ export async function deleteGuest(token: string): Promise<boolean> {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:G`,
+    range: `${SHEET_NAME}!A2:H`,
   });
 
   const rows = res.data.values || [];
-  const rowIndex = rows.findIndex((r) => r[COL.TOKEN] === token);
-  if (rowIndex === -1) return false;
+  const matchingIndices: number[] = rows
+    .map((row, i) => (row[COL.TOKEN] === token ? i + 2 : null))
+    .filter((i): i is number => i !== null);
 
-  const sheetRow = rowIndex + 2;
+  if (matchingIndices.length === 0) return false;
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId,
-    range: `${SHEET_NAME}!A${sheetRow}:G${sheetRow}`,
-  });
+  const sheetId = await getSheetId(sheets, spreadsheetId, SHEET_NAME);
+  await deleteRowsByIndices(sheets, spreadsheetId, sheetId, matchingIndices);
 
   return true;
 }
