@@ -4,12 +4,18 @@ import { useState, useEffect, useCallback } from "react";
 
 interface Guest {
   token: string;
-  nome: string;
-  cognome: string;
+  invitato: string;
   confermato: "si" | "no" | "";
+  partecipanti: number;
   intolleranze: string;
   note: string;
   dataRisposta: string;
+}
+
+interface EventSettings {
+  nomeEvento: string;
+  dataEvento: string;
+  emailContatto: string;
 }
 
 type View = "login" | "dashboard";
@@ -33,8 +39,11 @@ export default function AdminPage() {
     if (res.ok) {
       setSavedPassword(password);
       setView("dashboard");
-    } else {
+    } else if (res.status === 401) {
       setLoginError("Password non corretta");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setLoginError(data.error || "Errore del server. Controlla la configurazione.");
     }
     setLoginLoading(false);
   }
@@ -99,14 +108,24 @@ function Dashboard({
   const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [newNome, setNewNome] = useState("");
-  const [newCognome, setNewCognome] = useState("");
+  const [newInvitato, setNewInvitato] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [deleteToken, setDeleteToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "confirmed" | "pending" | "declined">("all");
   const [baseUrl, setBaseUrl] = useState("");
+
+  // Settings state
+  const [settings, setSettings] = useState<EventSettings>({
+    nomeEvento: "",
+    dataEvento: "",
+    emailContatto: "",
+  });
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
@@ -132,13 +151,52 @@ function Dashboard({
     }
   }, [password]);
 
+  const loadSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        headers: { "x-admin-password": password },
+      });
+      const data = await res.json();
+      if (res.ok) setSettings(data.settings);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [password]);
+
   useEffect(() => {
     loadGuests();
-  }, [loadGuests]);
+    loadSettings();
+  }, [loadGuests, loadSettings]);
+
+  async function handleSaveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSettingsSaving(true);
+    setSettingsMessage("");
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": password,
+        },
+        body: JSON.stringify(settings),
+      });
+      if (res.ok) {
+        setSettingsMessage("Salvato!");
+        setTimeout(() => setSettingsMessage(""), 3000);
+      } else {
+        const data = await res.json();
+        setSettingsMessage(data.error || "Errore nel salvataggio");
+      }
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
 
   async function handleAddGuest(e: React.FormEvent) {
     e.preventDefault();
-    if (!newNome.trim() || !newCognome.trim()) return;
+    if (!newInvitato.trim()) return;
     setAddLoading(true);
     setAddError("");
 
@@ -149,7 +207,7 @@ function Dashboard({
           "Content-Type": "application/json",
           "x-admin-password": password,
         },
-        body: JSON.stringify({ nome: newNome.trim(), cognome: newCognome.trim() }),
+        body: JSON.stringify({ invitato: newInvitato.trim() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -157,8 +215,7 @@ function Dashboard({
         return;
       }
       setGuests((prev) => [...prev, data.guest]);
-      setNewNome("");
-      setNewCognome("");
+      setNewInvitato("");
     } catch {
       setAddError("Errore di connessione");
     } finally {
@@ -169,10 +226,10 @@ function Dashboard({
   async function handleDelete(token: string) {
     setDeleteToken(token);
     try {
-      const res = await fetch(`/api/admin/guests?token=${encodeURIComponent(token)}`, {
-        method: "DELETE",
-        headers: { "x-admin-password": password },
-      });
+      const res = await fetch(
+        `/api/admin/guests?token=${encodeURIComponent(token)}`,
+        { method: "DELETE", headers: { "x-admin-password": password } }
+      );
       if (res.ok) {
         setGuests((prev) => prev.filter((g) => g.token !== token));
       }
@@ -193,6 +250,9 @@ function Dashboard({
     confirmed: guests.filter((g) => g.confermato === "si").length,
     declined: guests.filter((g) => g.confermato === "no").length,
     pending: guests.filter((g) => g.confermato === "").length,
+    totalParticipants: guests
+      .filter((g) => g.confermato === "si")
+      .reduce((sum, g) => sum + (g.partecipanti || 0), 0),
     withIntolerances: guests.filter(
       (g) => g.confermato === "si" && g.intolleranze.trim()
     ).length,
@@ -212,55 +272,147 @@ function Dashboard({
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="font-serif text-xl text-stone-800">
-              Conferme Matrimonio
+              {settings.nomeEvento || "Conferme Matrimonio"}
             </h1>
             <p className="text-xs text-stone-400">Pannello Admin</p>
           </div>
-          <button
-            onClick={onLogout}
-            className="text-sm text-stone-400 hover:text-stone-700 transition-colors"
-          >
-            Esci
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="text-sm text-stone-400 hover:text-stone-700 transition-colors"
+            >
+              Impostazioni
+            </button>
+            <span className="text-stone-200">|</span>
+            <button
+              onClick={onLogout}
+              className="text-sm text-stone-400 hover:text-stone-700 transition-colors"
+            >
+              Esci
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+        {/* Settings panel */}
+        {showSettings && (
+          <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-stone-700 mb-5">
+              Impostazioni evento
+            </h2>
+            {settingsLoading ? (
+              <p className="text-sm text-stone-400">Caricamento...</p>
+            ) : (
+              <form onSubmit={handleSaveSettings} className="space-y-4">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                      Nome evento (es. Mario & Giulia)
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.nomeEvento}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, nomeEvento: e.target.value }))
+                      }
+                      placeholder="Salvatore & Dia"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                      Data evento
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.dataEvento}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, dataEvento: e.target.value }))
+                      }
+                      placeholder="Sabato, 12 Luglio 2025"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="sm:w-1/2">
+                  <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                    Email di contatto
+                  </label>
+                  <input
+                    type="email"
+                    value={settings.emailContatto}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, emailContatto: e.target.value }))
+                    }
+                    placeholder="info@esempio.it"
+                    className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
+                    required
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={settingsSaving}
+                    className="px-5 py-2.5 rounded-xl bg-stone-800 text-white text-sm font-medium hover:bg-stone-700 transition-colors disabled:opacity-50"
+                  >
+                    {settingsSaving ? "Salvataggio..." : "Salva impostazioni"}
+                  </button>
+                  {settingsMessage && (
+                    <p
+                      className={`text-sm ${
+                        settingsMessage === "Salvato!"
+                          ? "text-green-600"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {settingsMessage}
+                    </p>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Invitati totali" value={stats.total} color="stone" />
-          <StatCard
-            label="Confermati"
-            value={stats.confirmed}
-            color="green"
-          />
-          <StatCard
-            label="In attesa"
-            value={stats.pending}
-            color="amber"
-          />
-          <StatCard
-            label="Non presenti"
-            value={stats.declined}
-            color="rose"
-          />
+          <StatCard label="Inviti inviati" value={stats.total} color="stone" />
+          <StatCard label="Confermati" value={stats.confirmed} color="green" />
+          <StatCard label="In attesa" value={stats.pending} color="amber" />
+          <StatCard label="Non presenti" value={stats.declined} color="rose" />
         </div>
 
-        {stats.withIntolerances > 0 && (
-          <div className="bg-amber-50 border border-amber-100 rounded-xl px-5 py-3 flex items-center gap-3">
-            <span className="text-amber-500 text-lg">⚠</span>
-            <p className="text-sm text-amber-700">
-              <strong>{stats.withIntolerances}</strong> ospite
-              {stats.withIntolerances > 1 ? "i" : ""} ha segnalato intolleranze
-              o allergie alimentari.
-            </p>
+        {stats.confirmed > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-green-50 rounded-2xl p-5 border border-white shadow-sm">
+              <p className="text-3xl font-serif font-light text-green-700">
+                {stats.totalParticipants}
+              </p>
+              <p className="text-xs mt-1 text-green-600 opacity-70">
+                Partecipanti totali confermati
+              </p>
+            </div>
+            {stats.withIntolerances > 0 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl px-5 py-4 flex items-center gap-3">
+                <span className="text-amber-500 text-lg flex-shrink-0">⚠</span>
+                <p className="text-sm text-amber-700">
+                  <strong>{stats.withIntolerances}</strong>{" "}
+                  {stats.withIntolerances === 1 ? "gruppo ha" : "gruppi hanno"} segnalato
+                  intolleranze alimentari.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
         {/* Add guest */}
         <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
           <h2 className="text-sm font-semibold text-stone-700 mb-4">
-            Aggiungi ospite
+            Aggiungi invitato
           </h2>
           <form
             onSubmit={handleAddGuest}
@@ -268,17 +420,9 @@ function Dashboard({
           >
             <input
               type="text"
-              value={newNome}
-              onChange={(e) => setNewNome(e.target.value)}
-              placeholder="Nome"
-              className="flex-1 px-4 py-2.5 rounded-xl border border-stone-200 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
-              required
-            />
-            <input
-              type="text"
-              value={newCognome}
-              onChange={(e) => setNewCognome(e.target.value)}
-              placeholder="Cognome"
+              value={newInvitato}
+              onChange={(e) => setNewInvitato(e.target.value)}
+              placeholder="Es: Famiglia Rossi, Marco e Laura, Zio Giovanni..."
               className="flex-1 px-4 py-2.5 rounded-xl border border-stone-200 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
               required
             />
@@ -299,7 +443,7 @@ function Dashboard({
         <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-stone-700">
-              Lista ospiti
+              Lista inviti
             </h2>
             <button
               onClick={loadGuests}
@@ -310,7 +454,7 @@ function Dashboard({
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-stone-100 px-6 gap-1">
+          <div className="flex border-b border-stone-100 px-6 gap-1 overflow-x-auto">
             {(
               [
                 { id: "all", label: `Tutti (${stats.total})` },
@@ -343,7 +487,7 @@ function Dashboard({
             </div>
           ) : filteredGuests.length === 0 ? (
             <div className="py-16 text-center text-stone-300 text-sm">
-              Nessun ospite in questa categoria
+              Nessun invitato in questa categoria
             </div>
           ) : (
             <div className="divide-y divide-stone-50">
@@ -383,9 +527,7 @@ function StatCard({
   };
 
   return (
-    <div
-      className={`rounded-2xl p-5 ${colors[color]} border border-white shadow-sm`}
-    >
+    <div className={`rounded-2xl p-5 ${colors[color]} border border-white shadow-sm`}>
       <p className="text-3xl font-serif font-light">{value}</p>
       <p className="text-xs mt-1 opacity-70">{label}</p>
     </div>
@@ -409,20 +551,21 @@ function GuestRow({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const link = `${baseUrl}/invito/${guest.token}`;
+  const shortLink = `/invito/${guest.token.slice(0, 8)}…`;
 
   const statusBadge = {
     si: (
-      <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
+      <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
         ✓ Confermato
       </span>
     ),
     no: (
-      <span className="inline-flex items-center gap-1 text-xs bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full font-medium">
+      <span className="inline-flex items-center gap-1 text-xs bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
         ✗ Non presente
       </span>
     ),
     "": (
-      <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-medium">
+      <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
         ⏳ In attesa
       </span>
     ),
@@ -430,22 +573,38 @@ function GuestRow({
 
   return (
     <div className="px-6 py-4 hover:bg-stone-50 transition-colors">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="text-left"
+      {/* Main row */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="text-sm font-medium text-stone-800 text-left hover:text-stone-600 transition-colors"
+            >
+              {guest.invitato}
+            </button>
+            {statusBadge}
+            {guest.confermato === "si" && guest.partecipanti > 0 && (
+              <span className="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full whitespace-nowrap">
+                {guest.partecipanti} {guest.partecipanti === 1 ? "persona" : "persone"}
+              </span>
+            )}
+            {guest.confermato === "si" && guest.intolleranze && (
+              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                ⚠ intolleranze
+              </span>
+            )}
+          </div>
+          {/* Link always visible */}
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-stone-400 hover:text-stone-600 transition-colors font-mono"
+            title={link}
           >
-            <p className="text-sm font-medium text-stone-800">
-              {guest.nome} {guest.cognome}
-            </p>
-          </button>
-          {statusBadge}
-          {guest.confermato === "si" && guest.intolleranze && (
-            <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">
-              ⚠ intolleranze
-            </span>
-          )}
+            {shortLink}
+          </a>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -464,10 +623,11 @@ function GuestRow({
         </div>
       </div>
 
+      {/* Expandable details */}
       {showDetails && (
-        <div className="mt-3 ml-0 text-xs text-stone-500 space-y-1 bg-stone-50 rounded-lg p-3">
+        <div className="mt-3 text-xs text-stone-500 space-y-1.5 bg-stone-50 rounded-lg p-3">
           <p>
-            <span className="text-stone-400">Link:</span>{" "}
+            <span className="text-stone-400">Link completo:</span>{" "}
             <a
               href={link}
               target="_blank"
@@ -485,12 +645,12 @@ function GuestRow({
           )}
           {guest.note && (
             <p>
-              <span className="text-stone-400">Note:</span> {guest.note}
+              <span className="text-stone-400">Messaggio:</span> {guest.note}
             </p>
           )}
           {guest.dataRisposta && (
             <p>
-              <span className="text-stone-400">Risposta:</span>{" "}
+              <span className="text-stone-400">Risposta inviata:</span>{" "}
               {guest.dataRisposta}
             </p>
           )}

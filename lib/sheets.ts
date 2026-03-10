@@ -4,13 +4,14 @@ import { v4 as uuidv4 } from "uuid";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 const SHEET_NAME = "Ospiti";
+const SETTINGS_SHEET_NAME = "Impostazioni";
 
 // Column indices (0-based)
 const COL = {
   TOKEN: 0,
-  NOME: 1,
-  COGNOME: 2,
-  CONFERMATO: 3,
+  INVITATO: 1,
+  CONFERMATO: 2,
+  PARTECIPANTI: 3,
   INTOLLERANZE: 4,
   NOTE: 5,
   DATA_RISPOSTA: 6,
@@ -18,13 +19,25 @@ const COL = {
 
 export interface Guest {
   token: string;
-  nome: string;
-  cognome: string;
+  invitato: string;
   confermato: "si" | "no" | "";
+  partecipanti: number;
   intolleranze: string;
   note: string;
   dataRisposta: string;
 }
+
+export interface EventSettings {
+  nomeEvento: string;
+  dataEvento: string;
+  emailContatto: string;
+}
+
+const DEFAULT_SETTINGS: EventSettings = {
+  nomeEvento: "Salvatore & Dia",
+  dataEvento: "Sabato, 12 Luglio 2025",
+  emailContatto: "info@esempio.it",
+};
 
 function getAuth() {
   const credentials = JSON.parse(
@@ -49,17 +62,18 @@ function getSpreadsheetId() {
 
 async function ensureSheet(
   sheets: ReturnType<typeof getSheetsClient>,
-  spreadsheetId: string
+  spreadsheetId: string,
+  sheetName: string
 ) {
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
   const exists = spreadsheet.data.sheets?.some(
-    (s) => s.properties?.title === SHEET_NAME
+    (s) => s.properties?.title === sheetName
   );
   if (!exists) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
-        requests: [{ addSheet: { properties: { title: SHEET_NAME } } }],
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
       },
     });
   }
@@ -69,7 +83,7 @@ async function ensureHeaderRow(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string
 ) {
-  await ensureSheet(sheets, spreadsheetId);
+  await ensureSheet(sheets, spreadsheetId, SHEET_NAME);
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -85,9 +99,9 @@ async function ensureHeaderRow(
         values: [
           [
             "token",
-            "nome",
-            "cognome",
+            "invitato",
             "confermato",
+            "partecipanti",
             "intolleranze",
             "note",
             "data_risposta",
@@ -113,9 +127,9 @@ export async function getGuest(token: string): Promise<Guest | null> {
 
   return {
     token: row[COL.TOKEN] || "",
-    nome: row[COL.NOME] || "",
-    cognome: row[COL.COGNOME] || "",
+    invitato: row[COL.INVITATO] || "",
     confermato: (row[COL.CONFERMATO] || "") as Guest["confermato"],
+    partecipanti: parseInt(row[COL.PARTECIPANTI] || "1") || 1,
     intolleranze: row[COL.INTOLLERANZE] || "",
     note: row[COL.NOTE] || "",
     dataRisposta: row[COL.DATA_RISPOSTA] || "",
@@ -125,6 +139,7 @@ export async function getGuest(token: string): Promise<Guest | null> {
 export async function saveRsvp(
   token: string,
   confermato: "si" | "no",
+  partecipanti: number,
   intolleranze: string,
   note: string
 ): Promise<boolean> {
@@ -145,12 +160,13 @@ export async function saveRsvp(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${SHEET_NAME}!D${sheetRow}:G${sheetRow}`,
+    range: `${SHEET_NAME}!C${sheetRow}:G${sheetRow}`,
     valueInputOption: "RAW",
     requestBody: {
       values: [
         [
           confermato,
+          confermato === "si" ? partecipanti : "",
           intolleranze,
           note,
           new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" }),
@@ -162,10 +178,7 @@ export async function saveRsvp(
   return true;
 }
 
-export async function createGuest(
-  nome: string,
-  cognome: string
-): Promise<Guest> {
+export async function createGuest(invitato: string): Promise<Guest> {
   const sheets = getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
 
@@ -179,15 +192,15 @@ export async function createGuest(
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
-      values: [[token, nome, cognome, "", "", "", ""]],
+      values: [[token, invitato, "", "", "", "", ""]],
     },
   });
 
   return {
     token,
-    nome,
-    cognome,
+    invitato,
     confermato: "",
+    partecipanti: 0,
     intolleranze: "",
     note: "",
     dataRisposta: "",
@@ -210,9 +223,9 @@ export async function getAllGuests(): Promise<Guest[]> {
     .filter((r) => r[COL.TOKEN])
     .map((r) => ({
       token: r[COL.TOKEN] || "",
-      nome: r[COL.NOME] || "",
-      cognome: r[COL.COGNOME] || "",
+      invitato: r[COL.INVITATO] || "",
       confermato: (r[COL.CONFERMATO] || "") as Guest["confermato"],
+      partecipanti: parseInt(r[COL.PARTECIPANTI] || "0") || 0,
       intolleranze: r[COL.INTOLLERANZE] || "",
       note: r[COL.NOTE] || "",
       dataRisposta: r[COL.DATA_RISPOSTA] || "",
@@ -234,11 +247,62 @@ export async function deleteGuest(token: string): Promise<boolean> {
 
   const sheetRow = rowIndex + 2;
 
-  // Clear the row
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
     range: `${SHEET_NAME}!A${sheetRow}:G${sheetRow}`,
   });
 
   return true;
+}
+
+export async function getSettings(): Promise<EventSettings> {
+  try {
+    const sheets = getSheetsClient();
+    const spreadsheetId = getSpreadsheetId();
+
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const exists = spreadsheet.data.sheets?.some(
+      (s) => s.properties?.title === SETTINGS_SHEET_NAME
+    );
+    if (!exists) return { ...DEFAULT_SETTINGS };
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SETTINGS_SHEET_NAME}!A1:B3`,
+    });
+
+    const rows = res.data.values || [];
+    const map: Record<string, string> = {};
+    rows.forEach((row) => {
+      if (row[0]) map[row[0]] = row[1] || "";
+    });
+
+    return {
+      nomeEvento: map["nome_evento"] || DEFAULT_SETTINGS.nomeEvento,
+      dataEvento: map["data_evento"] || DEFAULT_SETTINGS.dataEvento,
+      emailContatto: map["email_contatto"] || DEFAULT_SETTINGS.emailContatto,
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export async function saveSettings(settings: EventSettings): Promise<void> {
+  const sheets = getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+
+  await ensureSheet(sheets, spreadsheetId, SETTINGS_SHEET_NAME);
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SETTINGS_SHEET_NAME}!A1:B3`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [
+        ["nome_evento", settings.nomeEvento],
+        ["data_evento", settings.dataEvento],
+        ["email_contatto", settings.emailContatto],
+      ],
+    },
+  });
 }

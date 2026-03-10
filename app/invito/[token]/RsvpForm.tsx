@@ -12,6 +12,7 @@ type Step = "choice" | "details" | "submitted";
 export default function RsvpForm({ token, guestName }: Props) {
   const [step, setStep] = useState<Step>("choice");
   const [confermato, setConfermato] = useState<"si" | "no" | null>(null);
+  const [partecipanti, setPartecipanti] = useState(1);
   const [intolleranze, setIntolleranze] = useState("");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,13 @@ export default function RsvpForm({ token, guestName }: Props) {
       const res = await fetch("/api/rsvp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, confermato, intolleranze, note }),
+        body: JSON.stringify({
+          token,
+          confermato,
+          partecipanti,
+          intolleranze,
+          note,
+        }),
       });
 
       const data = await res.json();
@@ -46,7 +53,7 @@ export default function RsvpForm({ token, guestName }: Props) {
   if (step === "submitted") {
     const presente = confermato === "si";
     return (
-      <div className="text-center py-4 animate-in fade-in duration-500">
+      <div className="text-center py-4">
         <div
           className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 ${
             presente ? "bg-green-50" : "bg-stone-100"
@@ -70,7 +77,7 @@ export default function RsvpForm({ token, guestName }: Props) {
     return (
       <div className="space-y-4">
         <p className="text-center text-stone-600 text-sm font-medium mb-6">
-          Parteciperai al matrimonio?
+          Parteciperete al matrimonio?
         </p>
         <button
           onClick={() => {
@@ -79,7 +86,7 @@ export default function RsvpForm({ token, guestName }: Props) {
           }}
           className="w-full py-4 rounded-xl border-2 border-stone-200 hover:border-stone-800 hover:bg-stone-800 hover:text-white text-stone-700 font-medium transition-all duration-200 flex items-center justify-center gap-2"
         >
-          <span>✓</span> Sì, ci sarò!
+          <span>✓</span> Sì, ci saremo!
         </button>
         <button
           onClick={() => {
@@ -88,7 +95,7 @@ export default function RsvpForm({ token, guestName }: Props) {
           }}
           className="w-full py-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-stone-500 font-medium transition-all duration-200 flex items-center justify-center gap-2"
         >
-          <span>✗</span> Purtroppo non posso
+          <span>✗</span> Purtroppo non possiamo
         </button>
       </div>
     );
@@ -98,9 +105,40 @@ export default function RsvpForm({ token, guestName }: Props) {
     <div className="space-y-5">
       {confermato === "si" && (
         <>
+          {/* Partecipants stepper */}
+          <div>
+            <label className="block text-sm font-medium text-stone-600 mb-3">
+              Quante persone parteciperanno?
+            </label>
+            <div className="flex items-center justify-center gap-6">
+              <button
+                type="button"
+                onClick={() => setPartecipanti((n) => Math.max(1, n - 1))}
+                className="w-10 h-10 rounded-full border-2 border-stone-200 text-stone-600 text-lg font-medium hover:border-stone-400 hover:bg-stone-50 transition-colors flex items-center justify-center disabled:opacity-30"
+                disabled={partecipanti <= 1}
+              >
+                −
+              </button>
+              <span className="font-serif text-4xl text-stone-800 w-12 text-center">
+                {partecipanti}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPartecipanti((n) => Math.min(20, n + 1))}
+                className="w-10 h-10 rounded-full border-2 border-stone-200 text-stone-600 text-lg font-medium hover:border-stone-400 hover:bg-stone-50 transition-colors flex items-center justify-center disabled:opacity-30"
+                disabled={partecipanti >= 20}
+              >
+                +
+              </button>
+            </div>
+            <p className="text-center text-xs text-stone-400 mt-2">
+              {partecipanti === 1 ? "1 persona" : `${partecipanti} persone`}
+            </p>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-stone-600 mb-2">
-              Hai intolleranze o allergie alimentari?
+              Intolleranze o allergie alimentari?
             </label>
             <textarea
               value={intolleranze}
@@ -116,7 +154,7 @@ export default function RsvpForm({ token, guestName }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-stone-600 mb-2">
-              Vuoi aggiungere un messaggio?{" "}
+              Un messaggio per gli sposi{" "}
               <span className="text-stone-400 font-normal">(facoltativo)</span>
             </label>
             <textarea

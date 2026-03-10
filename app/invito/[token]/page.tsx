@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getGuest } from "@/lib/sheets";
+import { getGuest, getSettings } from "@/lib/sheets";
 import RsvpForm from "./RsvpForm";
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
 
 export default async function InvitoPage({ params }: Props) {
   const { token } = await params;
-  const guest = await getGuest(token);
+  const [guest, settings] = await Promise.all([getGuest(token), getSettings()]);
 
   if (!guest) {
     notFound();
@@ -25,7 +25,7 @@ export default async function InvitoPage({ params }: Props) {
             Siete invitati al matrimonio di
           </p>
           <h1 className="font-serif text-4xl md:text-5xl text-stone-800 mb-2">
-            Salvatore & Dia
+            {settings.nomeEvento}
           </h1>
           <div className="flex items-center justify-center gap-3 my-4">
             <div className="h-px w-16 bg-stone-300" />
@@ -33,7 +33,7 @@ export default async function InvitoPage({ params }: Props) {
             <div className="h-px w-16 bg-stone-300" />
           </div>
           <p className="text-stone-500 text-sm tracking-wide">
-            Sabato, 12 Luglio 2025
+            {settings.dataEvento}
           </p>
         </div>
 
@@ -46,7 +46,7 @@ export default async function InvitoPage({ params }: Props) {
               <div className="mb-8 text-center">
                 <p className="text-stone-500 text-sm mb-1">Caro/a</p>
                 <p className="font-serif text-2xl text-stone-800">
-                  {guest.nome} {guest.cognome}
+                  {guest.invitato}
                 </p>
               </div>
               <p className="text-stone-600 text-sm leading-relaxed text-center mb-8">
@@ -54,7 +54,7 @@ export default async function InvitoPage({ params }: Props) {
                 <br />
                 Ti chiediamo gentilmente di confermare la tua presenza.
               </p>
-              <RsvpForm token={token} guestName={guest.nome} />
+              <RsvpForm token={token} guestName={guest.invitato} />
             </>
           )}
         </div>
@@ -62,10 +62,10 @@ export default async function InvitoPage({ params }: Props) {
         <p className="text-center text-stone-400 text-xs mt-8">
           Per informazioni scrivi a{" "}
           <a
-            href="mailto:info@esempio.it"
+            href={`mailto:${settings.emailContatto}`}
             className="underline hover:text-stone-600 transition-colors"
           >
-            info@esempio.it
+            {settings.emailContatto}
           </a>
         </p>
       </div>
@@ -73,7 +73,11 @@ export default async function InvitoPage({ params }: Props) {
   );
 }
 
-function AlreadyResponded({ guest }: { guest: Awaited<ReturnType<typeof getGuest>> }) {
+function AlreadyResponded({
+  guest,
+}: {
+  guest: Awaited<ReturnType<typeof getGuest>>;
+}) {
   if (!guest) return null;
   const presente = guest.confermato === "si";
 
@@ -87,7 +91,7 @@ function AlreadyResponded({ guest }: { guest: Awaited<ReturnType<typeof getGuest
         <span className="text-3xl">{presente ? "🎉" : "💌"}</span>
       </div>
       <h2 className="font-serif text-2xl text-stone-800 mb-2">
-        Grazie, {guest.nome}!
+        Grazie, {guest.invitato}!
       </h2>
       <p className="text-stone-500 text-sm mb-6">
         {presente
@@ -105,6 +109,12 @@ function AlreadyResponded({ guest }: { guest: Awaited<ReturnType<typeof getGuest
             {presente ? "Confermata ✓" : "Non presente"}
           </span>
         </div>
+        {presente && guest.partecipanti > 0 && (
+          <div className="flex justify-between">
+            <span className="text-stone-400">Partecipanti</span>
+            <span className="text-stone-700">{guest.partecipanti}</span>
+          </div>
+        )}
         {guest.intolleranze && (
           <div className="flex justify-between">
             <span className="text-stone-400">Intolleranze</span>

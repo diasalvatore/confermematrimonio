@@ -33,16 +33,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { nome, cognome } = body;
+    const { invitato } = body;
 
-    if (!nome || !cognome) {
+    if (!invitato) {
       return NextResponse.json(
-        { error: "nome e cognome sono obbligatori" },
+        { error: "il campo invitato è obbligatorio" },
         { status: 400 }
       );
     }
 
-    const guest = await createGuest(nome.trim(), cognome.trim());
+    const guest = await createGuest(invitato.trim());
     return NextResponse.json({ guest }, { status: 201 });
   } catch (error) {
     console.error("POST guest error:", error);

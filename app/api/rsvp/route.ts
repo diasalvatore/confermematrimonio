@@ -4,7 +4,7 @@ import { getGuest, saveRsvp } from "@/lib/sheets";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, confermato, intolleranze, note } = body;
+    const { token, confermato, partecipanti, intolleranze, note } = body;
 
     if (!token || !confermato) {
       return NextResponse.json(
@@ -28,9 +28,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const numPartecipanti =
+      confermato === "si" ? Math.max(1, parseInt(partecipanti) || 1) : 0;
+
     const success = await saveRsvp(
       token,
       confermato,
+      numPartecipanti,
       intolleranze || "",
       note || ""
     );
