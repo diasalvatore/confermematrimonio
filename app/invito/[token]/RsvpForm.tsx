@@ -20,7 +20,7 @@ interface Props {
 type Step = "choice" | "details" | "recap" | "submitted";
 
 function newPersona(): Persona {
-  return { nome: "", tipo: "", menu: "", menuAltro: "" };
+  return { nome: "", tipo: "", menu: "pesce", menuAltro: "" };
 }
 
 const TIPO_LABELS: Record<TipoPersona, string> = {
@@ -289,9 +289,9 @@ export default function RsvpForm({ token, guestName }: Props) {
           <button
             type="button"
             onClick={addPersona}
-            className="w-full py-2.5 rounded-xl border-2 border-dashed border-stone-200 text-stone-400 text-sm hover:border-stone-400 hover:text-stone-600 transition-colors"
+            className="w-full py-3 rounded-xl border-2 border-stone-800 text-stone-800 text-sm font-semibold hover:bg-stone-800 hover:text-white transition-all duration-200 flex items-center justify-center gap-2"
           >
-            + Aggiungi persona
+            <span className="text-base leading-none">+</span> Aggiungi persona
           </button>
 
           {validationErrors.length > 0 && (
@@ -374,8 +374,8 @@ function PersonaCard({
   ];
 
   const menuOptions: { value: MenuPersona; label: string }[] = [
-    { value: "carne", label: "Menu carne" },
     { value: "pesce", label: "Menu pesce" },
+    { value: "carne", label: "Menu carne" },
     { value: "celiachia", label: "Celiachia" },
     { value: "altro", label: "Altro" },
   ];
