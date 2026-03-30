@@ -262,7 +262,7 @@ function Dashboard({
       (g) =>
         g.confermato === "si" &&
         g.persone.some(
-          (p) => p.menu === "celiachia" || p.menu.startsWith("altro:")
+          (p) => p.menu.includes("celiachia") || p.menu.includes("altro:")
         )
     ).length,
   };
@@ -389,22 +389,53 @@ function Dashboard({
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Inviti inviati" value={stats.total} color="stone" />
-          <StatCard label="Confermati" value={stats.confirmed} color="green" />
-          <StatCard label="In attesa" value={stats.pending} color="amber" />
-          <StatCard label="Non presenti" value={stats.declined} color="rose" />
+          <StatCard
+            label="Inviti inviati"
+            value={stats.total}
+            color="stone"
+            isActive={activeTab === "all"}
+            onClick={() => setActiveTab("all")}
+          />
+          <StatCard
+            label="Confermati"
+            value={stats.confirmed}
+            color="green"
+            isActive={activeTab === "confirmed"}
+            onClick={() => setActiveTab("confirmed")}
+          />
+          <StatCard
+            label="In attesa"
+            value={stats.pending}
+            color="amber"
+            isActive={activeTab === "pending"}
+            onClick={() => setActiveTab("pending")}
+          />
+          <StatCard
+            label="Non presenti"
+            value={stats.declined}
+            color="rose"
+            isActive={activeTab === "declined"}
+            onClick={() => setActiveTab("declined")}
+          />
         </div>
 
         {stats.confirmed > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-green-50 rounded-2xl p-5 border border-white shadow-sm">
+            <button
+              onClick={() => setActiveTab("confirmed")}
+              className={`bg-green-50 rounded-2xl p-5 border shadow-sm text-left transition-all cursor-pointer hover:shadow-md ${
+                activeTab === "confirmed"
+                  ? "border-green-300 ring-2 ring-green-200 ring-offset-1"
+                  : "border-white"
+              }`}
+            >
               <p className="text-3xl font-serif font-light text-green-700">
                 {stats.totalParticipants}
               </p>
               <p className="text-xs mt-1 text-green-600 opacity-70">
                 Partecipanti totali confermati
               </p>
-            </div>
+            </button>
             {stats.withSpecialMenu > 0 && (
               <div className="bg-amber-50 border border-amber-100 rounded-2xl px-5 py-4 flex items-center gap-3">
                 <span className="text-amber-500 text-lg flex-shrink-0">⚠</span>
@@ -523,23 +554,47 @@ function StatCard({
   label,
   value,
   color,
+  onClick,
+  isActive,
 }: {
   label: string;
   value: number;
   color: "stone" | "green" | "amber" | "rose";
+  onClick?: () => void;
+  isActive?: boolean;
 }) {
   const colors = {
-    stone: "bg-stone-50 text-stone-800",
-    green: "bg-green-50 text-green-700",
-    amber: "bg-amber-50 text-amber-700",
-    rose: "bg-rose-50 text-rose-700",
+    stone: {
+      base: "bg-stone-50 text-stone-800",
+      ring: "ring-stone-300 border-stone-200",
+    },
+    green: {
+      base: "bg-green-50 text-green-700",
+      ring: "ring-green-200 border-green-300",
+    },
+    amber: {
+      base: "bg-amber-50 text-amber-700",
+      ring: "ring-amber-200 border-amber-300",
+    },
+    rose: {
+      base: "bg-rose-50 text-rose-700",
+      ring: "ring-rose-200 border-rose-300",
+    },
   };
 
+  const { base, ring } = colors[color];
+
   return (
-    <div className={`rounded-2xl p-5 ${colors[color]} border border-white shadow-sm`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl p-5 ${base} border shadow-sm text-left w-full transition-all ${
+        onClick ? "cursor-pointer hover:shadow-md" : "cursor-default"
+      } ${isActive ? `ring-2 ring-offset-1 ${ring}` : "border-white"}`}
+    >
       <p className="text-3xl font-serif font-light">{value}</p>
       <p className="text-xs mt-1 opacity-70">{label}</p>
-    </div>
+    </button>
   );
 }
 
@@ -561,6 +616,15 @@ function GuestRow({
   const [showDetails, setShowDetails] = useState(false);
   const link = `${baseUrl}/invito/${guest.token}`;
   const shortLink = `/invito/${guest.token.slice(0, 8)}…`;
+
+  const hasSpecialMenu =
+    guest.confermato === "si" &&
+    guest.persone.some(
+      (p) => p.menu.includes("celiachia") || p.menu.includes("altro:")
+    );
+
+  const hasSecondaryInfo =
+    !!guest.note || !!guest.dataRisposta;
 
   const statusBadge = {
     si: (
@@ -586,12 +650,9 @@ function GuestRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="text-sm font-medium text-stone-800 text-left hover:text-stone-600 transition-colors"
-            >
+            <span className="text-sm font-medium text-stone-800">
               {guest.invitato}
-            </button>
+            </span>
             {statusBadge}
             {guest.confermato === "si" && guest.persone.length > 0 && (
               <span className="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full whitespace-nowrap">
@@ -599,14 +660,11 @@ function GuestRow({
                 {guest.persone.length === 1 ? "persona" : "persone"}
               </span>
             )}
-            {guest.confermato === "si" &&
-              guest.persone.some(
-                (p) => p.menu === "celiachia" || p.menu.startsWith("altro:")
-              ) && (
-                <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap">
-                  ⚠ esigenze alimentari
-                </span>
-              )}
+            {hasSpecialMenu && (
+              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                ⚠ esigenze alimentari
+              </span>
+            )}
           </div>
           {/* Link always visible */}
           <a
@@ -636,9 +694,36 @@ function GuestRow({
         </div>
       </div>
 
-      {/* Expandable details */}
+      {/* Persona list — always visible for confirmed guests */}
+      {guest.confermato === "si" && guest.persone.length > 0 && (
+        <div className="mt-2.5 space-y-1">
+          {guest.persone.map((p, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between bg-white rounded-lg px-3 py-1.5 border border-stone-100 text-xs"
+            >
+              <span className="text-stone-700 font-medium">{p.nome}</span>
+              <span className="text-stone-400 ml-3 text-right">
+                {p.tipo}{p.menu ? ` · ${p.menu}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Secondary details — expandable (note, data, full link) */}
+      {hasSecondaryInfo && (
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className="mt-2 text-xs text-stone-400 hover:text-stone-600 transition-colors flex items-center gap-1"
+        >
+          <span>{showDetails ? "▾" : "▸"}</span>
+          <span>Dettagli</span>
+        </button>
+      )}
+
       {showDetails && (
-        <div className="mt-3 text-xs text-stone-500 space-y-1.5 bg-stone-50 rounded-lg p-3">
+        <div className="mt-2 text-xs text-stone-500 space-y-1.5 bg-stone-50 rounded-lg p-3">
           <p>
             <span className="text-stone-400">Link completo:</span>{" "}
             <a
@@ -650,24 +735,6 @@ function GuestRow({
               {link}
             </a>
           </p>
-          {guest.persone.length > 0 && (
-            <div>
-              <span className="text-stone-400">Partecipanti:</span>
-              <div className="mt-1 space-y-0.5">
-                {guest.persone.map((p, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between bg-white rounded px-2 py-1 border border-stone-100"
-                  >
-                    <span className="text-stone-700 font-medium">{p.nome}</span>
-                    <span className="text-stone-400">
-                      {p.tipo}{p.menu ? ` · ${p.menu}` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {guest.note && (
             <p>
               <span className="text-stone-400">Messaggio:</span> {guest.note}
