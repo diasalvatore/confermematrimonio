@@ -2,35 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 import { getGuest, saveRsvp, type PersonaRow } from "@/lib/sheets";
 
 type TipoPersona = "adulto" | "bambino" | "neonato";
-type MenuPersona = "carne" | "pesce" | "celiachia" | "altro";
+type MenuPersona = "pesce" | "carne" | "speciale" | "nessuno";
+type EsigenzeAlimentari = "celiachia" | "altro" | null;
 
 interface PersonaInput {
   nome: string;
   tipo: TipoPersona;
   menu: MenuPersona | null;
-  menuAltro?: string;
+  esigenze: EsigenzeAlimentari;
+  esigenzeAltro?: string;
 }
 
 function toPersonaRow(p: PersonaInput): PersonaRow {
-  const tipoLabel =
-    p.tipo === "neonato" ? "bimbo 0-2 anni" : p.tipo;
+  const tipoLabel = p.tipo === "neonato" ? "bimbo 0-2 anni" : p.tipo;
 
   if (p.tipo === "neonato") {
-    return { nome: p.nome, tipo: tipoLabel, menu: "seggiolone" };
+    const menuLabel =
+      p.menu === "speciale" ? "menù speciale bambino" : "seggiolone";
+    return { nome: p.nome, tipo: tipoLabel, menu: menuLabel };
   }
 
   const menuLabel =
-    p.menu === "carne"
-      ? "menu carne"
-      : p.menu === "pesce"
-      ? "menu pesce"
-      : p.menu === "celiachia"
+    p.menu === "pesce" ? "menu pesce" : p.menu === "carne" ? "menu carne" : "";
+
+  const esigenzeLabel =
+    p.esigenze === "celiachia"
       ? "celiachia"
-      : p.menu === "altro"
-      ? `altro: ${p.menuAltro || ""}`.trim()
+      : p.esigenze === "altro"
+      ? `altro: ${p.esigenzeAltro || ""}`.trim()
       : "";
 
-  return { nome: p.nome, tipo: tipoLabel, menu: menuLabel };
+  const combined = [menuLabel, esigenzeLabel].filter(Boolean).join(" · ");
+  return { nome: p.nome, tipo: tipoLabel, menu: combined };
 }
 
 export async function POST(request: NextRequest) {

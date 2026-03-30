@@ -3,13 +3,15 @@
 import { useState } from "react";
 
 type TipoPersona = "adulto" | "bambino" | "neonato";
-type MenuPersona = "carne" | "pesce" | "celiachia" | "altro";
+type MenuPersona = "pesce" | "carne" | "speciale" | "nessuno";
+type EsigenzeAlimentari = "celiachia" | "altro" | "";
 
 interface Persona {
   nome: string;
   tipo: TipoPersona | "";
   menu: MenuPersona | "";
-  menuAltro: string;
+  esigenze: EsigenzeAlimentari;
+  esigenzeAltro: string;
 }
 
 interface Props {
@@ -20,20 +22,13 @@ interface Props {
 type Step = "choice" | "details" | "recap" | "submitted";
 
 function newPersona(): Persona {
-  return { nome: "", tipo: "", menu: "pesce", menuAltro: "" };
+  return { nome: "", tipo: "", menu: "pesce", esigenze: "", esigenzeAltro: "" };
 }
 
 const TIPO_LABELS: Record<TipoPersona, string> = {
   adulto: "Adulto",
   bambino: "Bambino",
   neonato: "Bimbo 0-2 anni",
-};
-
-const MENU_LABELS: Record<MenuPersona, string> = {
-  carne: "Menu carne",
-  pesce: "Menu pesce",
-  celiachia: "Celiachia",
-  altro: "Altro",
 };
 
 export default function RsvpForm({ token, guestName }: Props) {
@@ -50,10 +45,16 @@ export default function RsvpForm({ token, guestName }: Props) {
       prev.map((p, i) => {
         if (i !== index) return p;
         const updated = { ...p, ...fields };
-        // reset menu when switching to/from neonato
         if (fields.tipo === "neonato") {
           updated.menu = "";
-          updated.menuAltro = "";
+          updated.esigenze = "";
+          updated.esigenzeAltro = "";
+        } else if (
+          fields.tipo === "adulto" ||
+          fields.tipo === "bambino"
+        ) {
+          // coming from neonato: restore pesce default
+          if (p.tipo === "neonato") updated.menu = "pesce";
         }
         return updated;
       })
@@ -75,9 +76,8 @@ export default function RsvpForm({ token, guestName }: Props) {
       const n = i + 1;
       if (!p.nome.trim()) errors.push(`Persona ${n}: inserisci il nome`);
       if (!p.tipo) errors.push(`Persona ${n}: seleziona la fascia d'età`);
-      if (p.tipo !== "neonato" && !p.menu)
-        errors.push(`Persona ${n}: seleziona un'opzione menu`);
-      if (p.menu === "altro" && !p.menuAltro.trim())
+      if (!p.menu) errors.push(`Persona ${n}: seleziona un'opzione menu`);
+      if (p.esigenze === "altro" && !p.esigenzeAltro.trim())
         errors.push(`Persona ${n}: specifica l'esigenza alimentare`);
     });
     setValidationErrors(errors);
@@ -103,9 +103,10 @@ export default function RsvpForm({ token, guestName }: Props) {
               persone: persone.map((p) => ({
                 nome: p.nome.trim(),
                 tipo: p.tipo,
-                menu: p.tipo === "neonato" ? null : p.menu || null,
-                menuAltro:
-                  p.menu === "altro" ? p.menuAltro.trim() : undefined,
+                menu: p.menu || null,
+                esigenze: p.esigenze || null,
+                esigenzeAltro:
+                  p.esigenze === "altro" ? p.esigenzeAltro.trim() : undefined,
               })),
               note,
             }
@@ -129,6 +130,25 @@ export default function RsvpForm({ token, guestName }: Props) {
       setError("Errore di connessione. Riprova.");
       setLoading(false);
     }
+  }
+
+  function recapMenuLabel(p: Persona): string {
+    if (p.tipo === "neonato") {
+      return p.menu === "speciale" ? "Menù speciale bambino" : "Nessun menu";
+    }
+    const menuLabel =
+      p.menu === "pesce"
+        ? "Menu pesce"
+        : p.menu === "carne"
+        ? "Menu carne"
+        : "";
+    const esigenzeLabel =
+      p.esigenze === "celiachia"
+        ? "Celiachia"
+        : p.esigenze === "altro"
+        ? `Altro: ${p.esigenzeAltro}`
+        : "";
+    return [menuLabel, esigenzeLabel].filter(Boolean).join(" · ");
   }
 
   // ── Submitted ──────────────────────────────────────────────
@@ -167,22 +187,19 @@ export default function RsvpForm({ token, guestName }: Props) {
           {confermato === "si" && (
             <div className="space-y-2 mb-4">
               {persone.map((p, i) => {
-                const tipoLabel = p.tipo ? TIPO_LABELS[p.tipo as TipoPersona] : "";
-                const menuLabel =
-                  p.tipo === "neonato"
-                    ? "Seggiolone"
-                    : p.menu
-                    ? p.menu === "altro"
-                      ? `Altro: ${p.menuAltro}`
-                      : MENU_LABELS[p.menu as MenuPersona]
-                    : "";
+                const tipoLabel = p.tipo
+                  ? TIPO_LABELS[p.tipo as TipoPersona]
+                  : "";
+                const menuLabel = recapMenuLabel(p);
 
                 return (
                   <div
                     key={i}
                     className="flex items-start gap-3 bg-stone-50 rounded-xl px-4 py-3"
                   >
-                    <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                    <span className="text-green-500 mt-0.5 flex-shrink-0">
+                      ✓
+                    </span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-stone-800">
                         {p.nome}
@@ -208,7 +225,9 @@ export default function RsvpForm({ token, guestName }: Props) {
             <div className="bg-stone-50 rounded-xl px-4 py-3 text-sm text-stone-500">
               Hai indicato che non parteciperete.
               {note && (
-                <p className="mt-1 italic text-stone-400">&ldquo;{note}&rdquo;</p>
+                <p className="mt-1 italic text-stone-400">
+                  &ldquo;{note}&rdquo;
+                </p>
               )}
             </div>
           )}
@@ -354,6 +373,32 @@ export default function RsvpForm({ token, guestName }: Props) {
   );
 }
 
+// ── PersonaCard ─────────────────────────────────────────────
+
+function PillButton({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+        selected
+          ? "bg-stone-800 text-white"
+          : "bg-white border border-stone-200 text-stone-600 hover:border-stone-400"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function PersonaCard({
   index,
   persona,
@@ -373,15 +418,9 @@ function PersonaCard({
     { value: "neonato", label: "Bimbo 0-2 anni" },
   ];
 
-  const menuOptions: { value: MenuPersona; label: string }[] = [
-    { value: "pesce", label: "Menu pesce" },
-    { value: "carne", label: "Menu carne" },
-    { value: "celiachia", label: "Celiachia" },
-    { value: "altro", label: "Altro" },
-  ];
-
   return (
     <div className="bg-stone-50 rounded-2xl p-5 space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
           Persona {index + 1}
@@ -398,7 +437,7 @@ function PersonaCard({
         )}
       </div>
 
-      {/* Name */}
+      {/* Nome */}
       <div>
         <label className="block text-xs font-medium text-stone-500 mb-1.5">
           Nome e cognome
@@ -412,68 +451,116 @@ function PersonaCard({
         />
       </div>
 
-      {/* Type */}
+      {/* Fascia d'età */}
       <div>
         <label className="block text-xs font-medium text-stone-500 mb-2">
           Fascia d&apos;età
         </label>
         <div className="flex flex-wrap gap-2">
           {tipoOptions.map((opt) => (
-            <button
+            <PillButton
               key={opt.value}
-              type="button"
+              selected={persona.tipo === opt.value}
               onClick={() => onChange({ tipo: opt.value })}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                persona.tipo === opt.value
-                  ? "bg-stone-800 text-white"
-                  : "bg-white border border-stone-200 text-stone-600 hover:border-stone-400"
-              }`}
             >
               {opt.label}
-            </button>
+            </PillButton>
           ))}
         </div>
       </div>
 
-      {/* Menu (hidden for neonato) */}
+      {/* Adulto / Bambino */}
       {persona.tipo && persona.tipo !== "neonato" && (
-        <div>
-          <label className="block text-xs font-medium text-stone-500 mb-2">
-            Opzione menu
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {menuOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onChange({ menu: opt.value })}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  persona.menu === opt.value
-                    ? "bg-stone-800 text-white"
-                    : "bg-white border border-stone-200 text-stone-600 hover:border-stone-400"
-                }`}
+        <>
+          {/* Tipo menu */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-2">
+              Tipo menu
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <PillButton
+                selected={persona.menu === "pesce"}
+                onClick={() => onChange({ menu: "pesce" })}
               >
-                {opt.label}
-              </button>
-            ))}
+                Menu pesce
+              </PillButton>
+              <PillButton
+                selected={persona.menu === "carne"}
+                onClick={() => onChange({ menu: "carne" })}
+              >
+                Menu carne
+              </PillButton>
+            </div>
           </div>
-          {persona.menu === "altro" && (
-            <input
-              type="text"
-              value={persona.menuAltro}
-              onChange={(e) => onChange({ menuAltro: e.target.value })}
-              placeholder="Specifica l'esigenza alimentare..."
-              className="mt-2 w-full px-4 py-2.5 rounded-xl border border-stone-200 bg-white focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
-            />
-          )}
-        </div>
+
+          {/* Esigenze alimentari */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-2">
+              Esigenze alimentari{" "}
+              <span className="text-stone-400 font-normal">(facoltativo)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <PillButton
+                selected={persona.esigenze === "celiachia"}
+                onClick={() =>
+                  onChange({
+                    esigenze:
+                      persona.esigenze === "celiachia" ? "" : "celiachia",
+                  })
+                }
+              >
+                Celiachia
+              </PillButton>
+              <PillButton
+                selected={persona.esigenze === "altro"}
+                onClick={() =>
+                  onChange({
+                    esigenze: persona.esigenze === "altro" ? "" : "altro",
+                    esigenzeAltro:
+                      persona.esigenze === "altro" ? "" : persona.esigenzeAltro,
+                  })
+                }
+              >
+                Altro
+              </PillButton>
+            </div>
+            {persona.esigenze === "altro" && (
+              <input
+                type="text"
+                value={persona.esigenzeAltro}
+                onChange={(e) => onChange({ esigenzeAltro: e.target.value })}
+                placeholder="Specifica l'esigenza alimentare..."
+                className="mt-2 w-full px-4 py-2.5 rounded-xl border border-stone-200 bg-white focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-100 text-sm text-stone-700 transition-colors"
+              />
+            )}
+          </div>
+        </>
       )}
 
-      {/* Neonato info */}
+      {/* Neonato */}
       {persona.tipo === "neonato" && (
-        <p className="text-xs text-stone-400 bg-white rounded-lg px-3 py-2 border border-stone-100">
-          Verrà predisposto solo il seggiolone, nessun menu necessario.
-        </p>
+        <div>
+          <label className="block text-xs font-medium text-stone-500 mb-2">
+            Menu
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <PillButton
+              selected={persona.menu === "speciale"}
+              onClick={() => onChange({ menu: "speciale" })}
+            >
+              Menù speciale bambino
+            </PillButton>
+            <PillButton
+              selected={persona.menu === "nessuno"}
+              onClick={() => onChange({ menu: "nessuno" })}
+            >
+              Nessun menu
+            </PillButton>
+          </div>
+          <p className="text-xs text-stone-400 mt-2">
+            Verrà predisposto il seggiolone.
+          </p>
+        </div>
       )}
     </div>
   );
