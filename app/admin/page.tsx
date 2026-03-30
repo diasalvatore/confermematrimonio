@@ -437,14 +437,21 @@ function Dashboard({
               </p>
             </button>
             {stats.withSpecialMenu > 0 && (
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl px-5 py-4 flex items-center gap-3">
+              <button
+                onClick={() => setActiveTab("confirmed")}
+                className={`bg-amber-50 border rounded-2xl px-5 py-4 flex items-center gap-3 text-left w-full transition-all cursor-pointer hover:shadow-md ${
+                  activeTab === "confirmed"
+                    ? "border-amber-300 ring-2 ring-amber-200 ring-offset-1"
+                    : "border-amber-100"
+                }`}
+              >
                 <span className="text-amber-500 text-lg flex-shrink-0">⚠</span>
                 <p className="text-sm text-amber-700">
                   <strong>{stats.withSpecialMenu}</strong>{" "}
                   {stats.withSpecialMenu === 1 ? "gruppo ha" : "gruppi hanno"} esigenze
                   alimentari particolari (celiachia o altro).
                 </p>
-              </div>
+              </button>
             )}
           </div>
         )}
@@ -615,7 +622,6 @@ function GuestRow({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const link = `${baseUrl}/invito/${guest.token}`;
-  const shortLink = `/invito/${guest.token.slice(0, 8)}…`;
 
   const hasSpecialMenu =
     guest.confermato === "si" &&
@@ -623,8 +629,7 @@ function GuestRow({
       (p) => p.menu.includes("celiachia") || p.menu.includes("altro:")
     );
 
-  const hasSecondaryInfo =
-    !!guest.note || !!guest.dataRisposta;
+  const hasSecondaryInfo = true; // always show link + optional note/date
 
   const statusBadge = {
     si: (
@@ -649,13 +654,13 @@ function GuestRow({
       {/* Main row */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <span className="text-sm font-medium text-stone-800">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-base font-semibold text-stone-800">
               {guest.invitato}
             </span>
             {statusBadge}
             {guest.confermato === "si" && guest.persone.length > 0 && (
-              <span className="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full whitespace-nowrap">
+              <span className="text-xs font-semibold bg-stone-800 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap">
                 {guest.persone.length}{" "}
                 {guest.persone.length === 1 ? "persona" : "persone"}
               </span>
@@ -666,16 +671,6 @@ function GuestRow({
               </span>
             )}
           </div>
-          {/* Link always visible */}
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-stone-400 hover:text-stone-600 transition-colors font-mono"
-            title={link}
-          >
-            {shortLink}
-          </a>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
